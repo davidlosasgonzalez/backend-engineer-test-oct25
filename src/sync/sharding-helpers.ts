@@ -3,7 +3,6 @@ import { ErpProduct } from './types';
 /**
  * Sharding utilities for distributing work across multiple workers
  */
-
 function hashString(sku: string): number {
     let hash = 0;
     for (let i = 0; i < sku.length; i++) {
@@ -30,6 +29,10 @@ export function shouldProcessProduct(
 
 /**
  * Filters products to only those that should be processed by the given worker
+ * @param products - Array of products to filter
+ * @param totalWorkers - Total number of workers for sharding
+ * @param workerId - Current worker ID (0-indexed)
+ * @returns Filtered array of products assigned to this worker
  */
 export function filterProductsByWorker(
     products: ErpProduct[],

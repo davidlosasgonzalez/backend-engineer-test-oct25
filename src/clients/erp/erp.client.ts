@@ -13,15 +13,16 @@ export class ErpClient {
     }
 
     /**
-     * Fetches all products from the ERP by paginating through all pages
+     * Gets all products from the ERP using streaming (page by page without loading all in memory)
+     * Returns an async generator that yields product pages
      * @param limit - Number of products per page (1-1000). Defaults to 1000
      * @param updatedAfter - Optional ISO date string to filter products updated after this date
+     * @returns AsyncGenerator yielding arrays of ErpProduct (one array per page)
      */
-    async getAllProducts(
+    async *getAllProducts(
         limit: number = 1000,
         updatedAfter?: string,
-    ): Promise<ErpProduct[]> {
-        const allProducts: ErpProduct[] = [];
+    ): AsyncGenerator<ErpProduct[], void, unknown> {
         let page: number = 0;
         let totalPages: number = 0;
 
@@ -40,12 +41,10 @@ export class ErpClient {
             }
 
             const body = (await res.json()) as ErpProductsResponse;
-            allProducts.push(...body.data);
+            yield body.data;
 
             totalPages = body.pagination.total_pages;
             page++;
         } while (page < totalPages);
-
-        return allProducts;
     }
 }

@@ -20,6 +20,15 @@ export class StockSyncService {
 
     /**
      * Generic method to synchronize stock to any channel
+     * Uses streaming to process products page by page, reducing memory usage
+     * Applies sharding during streaming to distribute work across workers
+     * @param channelName - Name of the target channel (e.g., 'makro', 'woo')
+     * @param productsMapper - Function to transform ErpProduct to channel-specific update format
+     * @param updateFn - Function to send batch updates to the channel
+     * @param mode - Sync mode: 'full' or 'incremental'
+     * @param batchSize - Number of products per batch update
+     * @param totalWorkers - Total number of workers for sharding
+     * @param workerId - Current worker ID (0-indexed)
      */
     private async syncToChannel<T>(
         channelName: string,
@@ -30,20 +39,58 @@ export class StockSyncService {
         totalWorkers: number,
         workerId: number,
     ): Promise<void> {
-        let products: ErpProduct[];
-        if (mode === 'incremental') {
-            const lastSyncAt = this.syncState.getLastSyncAt(channelName);
-            products = lastSyncAt
-                ? await this.erpClient.getAllProducts(1000, lastSyncAt)
-                : await this.erpClient.getAllProducts();
-        } else {
-            products = await this.erpClient.getAllProducts();
+        const lastSyncAt =
+            mode === 'incremental'
+                ? this.syncState.getLastSyncAt(channelName) ?? undefined
+                : undefined;
+
+        const productStream = this.erpClient.getAllProducts(1000, lastSyncAt);
+
+        let batch: T[] = [];
+        let totalProcessed = 0;
+        let totalFromErp = 0;
+        let mostRecentUpdatedAt: string | null = null;
+
+        const workerInfo =
+            totalWorkers > 1
+                ? `Worker ${workerId + 1} of ${totalWorkers}: `
+                : '';
+
+        for await (const page of productStream) {
+            totalFromErp += page.length;
+
+            const workerProducts = filterProductsByWorker(
+                page,
+                totalWorkers,
+                workerId,
+            );
+
+            for (const product of workerProducts) {
+                batch.push(productsMapper(product));
+
+                if (mode === 'incremental') {
+                    if (
+                        !mostRecentUpdatedAt ||
+                        product.updated_at > mostRecentUpdatedAt
+                    ) {
+                        mostRecentUpdatedAt = product.updated_at;
+                    }
+                }
+
+                if (batch.length >= batchSize) {
+                    await updateFn(batch);
+                    totalProcessed += batch.length;
+                    batch = [];
+                }
+            }
         }
 
-        const totalProductsFromErp = products.length;
-        products = filterProductsByWorker(products, totalWorkers, workerId);
+        if (batch.length > 0) {
+            await updateFn(batch);
+            totalProcessed += batch.length;
+        }
 
-        if (products.length === 0) {
+        if (totalProcessed === 0) {
             if (totalWorkers > 1) {
                 console.log(
                     `Worker ${workerId + 1} of ${totalWorkers}: No products assigned`,
@@ -54,34 +101,13 @@ export class StockSyncService {
             return;
         }
 
-        const workerInfo =
-            totalWorkers > 1
-                ? `Worker ${workerId + 1} of ${totalWorkers}: `
-                : '';
+        const batches = Math.ceil(totalProcessed / batchSize);
         console.log(
-            `${workerInfo}Found ${totalProductsFromErp} products from ERP, processing ${products.length} products`,
+            `${workerInfo}Found ${totalFromErp} products from ERP, processed ${totalProcessed} products in ${batches} batch(es)`,
         );
 
-        const updates: T[] = products.map(productsMapper);
-
-        const batches = Math.ceil(updates.length / batchSize);
-        for (let i = 0; i < updates.length; i += batchSize) {
-            const batch = updates.slice(i, i + batchSize);
-            await updateFn(batch);
-        }
-
-        console.log(
-            `${workerInfo}Updated ${products.length} products in ${batches} batch(es)`,
-        );
-
-        if (mode === 'incremental') {
-            this.syncState.recordSyncBatch(
-                channelName,
-                products.map((product) => ({
-                    sku: product.sku,
-                    lastUpdatedAt: product.updated_at,
-                })),
-            );
+        if (mode === 'incremental' && mostRecentUpdatedAt) {
+            this.syncState.recordSyncUpdate(channelName, mostRecentUpdatedAt);
         }
     }
 

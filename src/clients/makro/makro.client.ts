@@ -14,6 +14,7 @@ export class MakroClient {
 
     /**
      * Updates stock for multiple products in a single batch request
+     * @param updates - Array of stock updates (product_id and quantity)
      */
     async updateStockBatch(updates: MakroStockUpdate[]): Promise<void> {
         if (updates.length === 0) {

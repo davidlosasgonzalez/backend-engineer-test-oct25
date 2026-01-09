@@ -4,6 +4,8 @@ import * as path from 'path';
 
 /**
  * Service for managing sync state persistence using SQLite
+ * Note: Each worker process has its own local database instance (sync-state.db)
+ * This is intentional for the sharding model where workers are independent processes
  */
 @Injectable()
 export class SyncStateService implements OnModuleInit {
@@ -32,6 +34,8 @@ export class SyncStateService implements OnModuleInit {
 
     /**
      * Gets the last updated timestamp for a target channel
+     * @param target - Channel name (e.g., 'makro', 'woo')
+     * @returns Last updated timestamp as ISO string, or null if no sync has occurred
      */
     getLastSyncAt(target: string): string | null {
         const row = this.database
@@ -42,19 +46,17 @@ export class SyncStateService implements OnModuleInit {
     }
 
     /**
-     * Records the most recent updated timestamp for a target channel
+     * Records a sync update timestamp (optimized for streaming)
+     * Only updates if the new timestamp is more recent than the current one
+     * Note: created_at is only set on INSERT, not updated on conflict (SQLite behavior)
+     * @param target - Channel name (e.g., 'makro', 'woo')
+     * @param lastUpdatedAt - ISO timestamp of the most recent product update
      */
-    recordSyncBatch(
-        target: string,
-        records: Array<{ sku: string; lastUpdatedAt: string }>,
-    ): void {
-        if (records.length === 0) {
+    recordSyncUpdate(target: string, lastUpdatedAt: string): void {
+        const current = this.getLastSyncAt(target);
+        if (current && lastUpdatedAt <= current) {
             return;
         }
-
-        const mostRecent = records.reduce((max, record) => {
-            return record.lastUpdatedAt > max ? record.lastUpdatedAt : max;
-        }, records[0].lastUpdatedAt);
 
         const now = new Date().toISOString();
         this.database
@@ -65,6 +67,6 @@ export class SyncStateService implements OnModuleInit {
                      last_updated_at = excluded.last_updated_at,
                      updated_at = excluded.updated_at`,
             )
-            .run(target, mostRecent, now, now);
+            .run(target, lastUpdatedAt, now, now);
     }
 }

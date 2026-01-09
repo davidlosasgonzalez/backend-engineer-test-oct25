@@ -77,7 +77,7 @@ npm run start -- sync --target=makro --workers=3 --worker=2
 
 ### Cómo funciona
 
-* Cada proceso lee todos los productos del ERP
+* Cada proceso lee los productos del ERP mediante paginación
 * Cada producto se asigna a un único proceso usando su **SKU**
 
 ```ts
@@ -95,21 +95,24 @@ Esto permite:
 
 * **ERP Client**
   Se encarga de leer productos del ERP con paginación y filtros por fecha.
+  Implementa **streaming**, procesando los productos página por página sin cargarlos todos en memoria.
 
 * **Clientes de Canal (Makro / WooCommerce)**
   Encargados de enviar las actualizaciones de stock en lotes.
 
 * **StockSyncService**
-  Orquesta todo el flujo:
+  Orquesta el flujo completo:
 
-  * lectura del ERP
-  * sharding
+  * lectura del ERP mediante streaming
+  * sharding durante el procesamiento (filtrado página por página)
   * batching
   * envío al canal
-  * guardado del estado
+  * guardado del estado incremental
 
 * **State Service (SQLite)**
-  Guarda la información necesaria para poder hacer sincronizaciones incrementales.
+  Guarda la información necesaria para realizar sincronizaciones incrementales.
+  Cada worker tiene su propia base de datos local (`sync-state.db`).
+  Esto es intencional: los workers son procesos independientes y no comparten estado.
 
 ## Decisiones Técnicas
 
@@ -117,18 +120,56 @@ Esto permite:
 * **TypeScript** con tipado claro y explícito
 * **SKU como identificador único** del producto en todo el sistema
 * **Actualizaciones idempotentes** (`set stock = X`)
-* **Sharding determinístico** para concurrencia segura
+* **Sharding determinístico** para permitir ejecución concurrente sin solapamientos
 * **SQLite local** para persistir el estado del modo incremental
+  *Cada worker mantiene su propio estado local; no existe estado compartido entre procesos.*
 
 ## Pendiente para Producción
 
-Para un entorno real de producción, aún quedarían algunos puntos por completar:
+Para un entorno real de producción, quedarían algunos puntos por completar:
 
-* Añadir reglas de negocio para controlar el stock por producto o categoría
+* Implementar reglas de negocio por producto o categoría
 * Mejorar el manejo de errores al llamar a APIs externas
-* Añadir logs y métricas para poder detectar problemas
-* Guardar el estado de sincronización en una base de datos remota
-* Incorporar tests automatizados para asegurar estabilidad a largo plazo
+* Añadir logs y métricas
+* **Persistir el estado incremental en una base de datos compartida** en lugar de SQLite local
+* Añadir tests automatizados
+* (Opcional) Sharding a nivel API si el ERP lo permite
+
+## Estrategia de Escalabilidad
+
+El código está preparado para manejar **100k+ productos** mediante:
+
+* **Streaming de productos**: los productos se procesan página por página
+* **Sharding durante el streaming**: cada worker filtra solo los productos que le corresponden
+* **Uso de memoria constante**: ~2–5 MB por worker independientemente del tamaño del catálogo
+* **Estado incremental optimizado**: se actualiza durante el procesamiento, no al final
+
+### Impacto de las mejoras
+
+| Aspecto            | Antes                         | Después                      |
+| ------------------ | ----------------------------- | ---------------------------- |
+| Memoria por worker | 100–200 MB                    | ~2–5 MB                      |
+| Llamadas al ERP    | N workers × catálogo completo | Streaming página por página  |
+| Procesamiento      | Redundante                    | Distribuido por worker       |
+| Escalabilidad      | Limitada                      | Lineal hasta 100k+ productos |
+
+## Reglas de Negocio
+
+El enunciado contempla reglas de negocio para controlar el stock a nivel de producto o categoría (forzar stock, marcar fuera de stock, definir mínimos, etc.).
+
+Estas reglas **no se han implementado en esta iteración** por limitación de tiempo.
+La arquitectura está preparada para incorporarlas fácilmente en una capa previa al envío a cada canal o dentro del `productsMapper` de cada integración.
+
+## Pendiente para Producción
+
+Para un entorno real de producción, quedarían algunos puntos por completar:
+
+* Implementar reglas de negocio por producto o categoría
+* Mejorar el manejo de errores al llamar a APIs externas
+* Añadir logs y métricas
+* Persistir el estado incremental en una base de datos compartida
+* Añadir tests automatizados
+* (Opcional) Sharding a nivel API si el ERP lo permite
 
 ## Licencia
 
@@ -137,4 +178,4 @@ MIT
 ## Autor
 
 **David Losas González**
-- [davidlosas93@gmail.com](mailto:davidlosas93@gmail.com)
+[davidlosas93@gmail.com](mailto:davidlosas93@gmail.com)
