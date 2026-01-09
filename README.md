@@ -1,184 +1,140 @@
 # StockSync CLI
 
-Herramienta CLI para sincronizar stock desde ERP a los marketplaces Makro y WooCommerce.
-
----
+Herramienta **CLI** para sincronizar stock desde un ERP interno hacia los marketplaces **Makro** y **WooCommerce**.
 
 ## Resumen
 
-StockSync es una herramienta de línea de comandos construida con **NestJS** y **TypeScript** para sincronizar inventario de productos desde un sistema ERP interno hacia múltiples canales de venta:
+**StockSync** es una herramienta de línea de comandos hecha con **NestJS** y **TypeScript** para mantener sincronizado el stock de productos entre un ERP y distintos canales de venta.
 
-* **Makro** – Marketplace para hostelería
-* **WooCommerce** – Plataforma e-commerce (Greenvase.es)
+Es una aplicación **CLI**, no una API.
+NestJS se usa únicamente como **contenedor de dependencias**, para mantener el código ordenado y fácil de extender.
 
-Diseñada para **robustez**, **claridad** y **actualizaciones idempotentes**, la herramienta permite sincronización completa e incremental de stock.
+El foco del proyecto está en:
 
----
+* que la sincronización funcione de punta a punta
+* poder ejecutar varios procesos a la vez sin pisarse
+* evitar efectos secundarios (actualizaciones idempotentes)
+* mantener una arquitectura simple y fácil de entender
 
-## Características
+## Funcionalidades
 
-### ✅ Actualmente Implementado
-
-* **Sincronización Completa de Stock**: Sincroniza todos los productos desde ERP hacia los canales objetivo
-* **Soporte Multi-Canal**: Soporta tanto Makro como WooCommerce
-* **Actualizaciones por Lotes**: Procesamiento eficiente en lotes (100 productos por lote)
-* **Paginación**: Maneja catálogos grandes de productos con paginación
-* **Interfaz CLI**: Interfaz de línea de comandos con flag `--target`
-* **Actualizaciones Idempotentes**: Seguro incluso con productos duplicados de los servidores mock
-
----
+* **Sincronización FULL** de stock desde ERP a Makro y WooCommerce
+* **Sincronización incremental**, usando la última ejecución como referencia (SQLite local)
+* **Ejecución concurrente sin solapamientos** usando sharding por SKU
+* **Soporte multi-canal** (Makro y WooCommerce)
+* **Actualizaciones en lotes** para mejorar rendimiento
+* **CLI configurable** mediante flags (`--target`, `--mode`, `--workers`, `--worker`)
 
 ## Instalación
 
-### Prerrequisitos
+### Requisitos
 
 * Node.js v18+
-* npm o yarn
+* npm
 
-### Configuración
+### Setup
 
 ```bash
 git clone <repository-url>
 cd backend-engineer-test-oct25-main
 npm install
-npm run build   # opcional
-```
-
----
-
-## Uso
-
-### Inicio Rápido
-
-La forma más fácil de sincronizar stock es usando los scripts de npm:
-
-```bash
-# Sincronizar a Makro
-npm run sync:makro
-
-# Sincronizar a WooCommerce
-npm run sync:woo
-```
-
-### Comandos CLI
-
-También puedes usar el CLI directamente con más control:
-
-```bash
-# Sincronizar a Makro
-npm run start -- sync --target=makro
-
-# Sincronizar a WooCommerce
-npm run start -- sync --target=woo
-
-# Mostrar ayuda
-npm run start -- --help
-```
-
----
-
-## Estructura del Proyecto
-
-```
-src/
-├── main.ts                 # Punto de entrada CLI
-├── app.module.ts           # Contenedor DI de NestJS
-├── clients/                # Clientes de API
-│   ├── erp/               # Cliente del sistema ERP
-│   ├── makro/             # Cliente del marketplace Makro
-│   └── woo/               # Cliente de WooCommerce
-└── sync/                   # Lógica de sincronización
-    ├── stock-sync.service.ts
-    └── types.ts
-```
-
----
-
-## Arquitectura
-
-* **Cliente ERP** – Obtiene productos con soporte de paginación
-* **Clientes de Canal** – Manejan actualizaciones de stock para Makro/WooCommerce en lotes
-* **Servicio de Sync** – Orquesta la lectura de datos del ERP, agrupa actualizaciones y envía a los canales objetivo
-* **CLI** – Interfaz de línea de comandos usando Commander.js
-
----
-
-## Servidores Mock
-
-Usados para desarrollo y testing:
-
-* **ERP**: `https://stoplight.io/mocks/greenvase/greenvase-test/152899748`
-* **Makro**: `https://stoplight.io/mocks/greenvase/greenvase-test/1322555588`
-* **WooCommerce**: `https://stoplight.io/mocks/greenvase/greenvase-test/1322555590`
-
-### Limitaciones Conocidas de los Mocks
-
-* Los servidores mock pueden retornar **productos duplicados con el mismo SKU/ID**.
-* Por ejemplo, el mismo SKU (`BAN-ALU-001`) puede aparecer múltiples veces en los resultados paginados.
-
-**Cómo StockSync maneja esto:**
-
-* Las actualizaciones son **idempotentes** (`set stock = X`)
-* Los duplicados no corrompen el estado final del stock
-* El sharding y batching permanecen correctos
-* No se implementa lógica extra de deduplicación en el dominio, evitando adaptación a problemas específicos del mock
-
-**En producción:** Se espera que los sistemas ERP retornen SKUs únicos, por lo que los duplicados no deberían ocurrir.
-
----
-
-## Desarrollo
-
-### Ejecución en Modo Desarrollo
-
-El modo desarrollo usa `ts-node` para ejecutar TypeScript directamente:
-
-```bash
-# Sincronizar a Makro
-npm run start -- sync --target=makro
-
-# O usar los scripts de npm
-npm run sync:makro
-npm run sync:woo
-```
-
-### Compilación para Producción
-
-1. Compilar TypeScript a JavaScript:
-```bash
 npm run build
 ```
 
-2. Ejecutar el código compilado:
-```bash
-# Sincronizar a Makro
-node dist/main.js sync --target=makro
+## Uso
 
-# Sincronizar a WooCommerce
-node dist/main.js sync --target=woo
+### Comandos rápidos
+
+```bash
+# Sincronización completa
+npm run sync:makro
+npm run sync:woo
+
+# Sincronización incremental
+npm run sync:makro:incremental
+npm run sync:woo:incremental
 ```
 
----
+### Uso directo del CLI
+
+```bash
+npm run start -- sync --target=makro
+npm run start -- sync --target=woo
+
+npm run start -- sync --target=makro --mode=incremental
+```
+
+## Ejecución Concurrente (Sharding)
+
+La herramienta permite ejecutar varios procesos en paralelo sin que se pisen entre ellos.
+
+```bash
+# Ejemplo con 3 workers
+npm run start -- sync --target=makro --workers=3 --worker=0
+npm run start -- sync --target=makro --workers=3 --worker=1
+npm run start -- sync --target=makro --workers=3 --worker=2
+```
+
+### Cómo funciona
+
+* Cada proceso lee todos los productos del ERP
+* Cada producto se asigna a un único proceso usando su **SKU**
+
+```ts
+hash(SKU) % totalWorkers === workerId
+```
+
+Esto permite:
+
+* no usar locks
+* no compartir estado entre procesos
+* escalar simplemente lanzando más workers
+* asegurar que cada producto se procesa una sola vez
+
+## Arquitectura (a alto nivel)
+
+* **ERP Client**
+  Se encarga de leer productos del ERP con paginación y filtros por fecha.
+
+* **Clientes de Canal (Makro / WooCommerce)**
+  Encargados de enviar las actualizaciones de stock en lotes.
+
+* **StockSyncService**
+  Orquesta todo el flujo:
+
+  * lectura del ERP
+  * sharding
+  * batching
+  * envío al canal
+  * guardado del estado
+
+* **State Service (SQLite)**
+  Guarda la información necesaria para poder hacer sincronizaciones incrementales.
 
 ## Decisiones Técnicas
 
-* **NestJS** – Usado como contenedor de inyección de dependencias, no como framework REST API
-* **TypeScript** – Tipado estricto para mejor calidad de código
-* **Fetch API** – Fetch nativo de Node.js (no se necesita cliente HTTP externo)
-* **Commander.js** – Framework CLI para parsing de comandos
-* **Procesamiento por Lotes** – Las actualizaciones se envían en lotes de 100 productos para eficiencia
-* **SKU como Identificador Único** – Toda la lógica de sincronización usa SKU como identificador único del producto
+* **NestJS** usado solo como contenedor de DI
+* **TypeScript** con tipado claro y explícito
+* **SKU como identificador único** del producto en todo el sistema
+* **Actualizaciones idempotentes** (`set stock = X`)
+* **Sharding determinístico** para concurrencia segura
+* **SQLite local** para persistir el estado del modo incremental
 
----
+## Pendiente para Producción
+
+Para un entorno real de producción, aún quedarían algunos puntos por completar:
+
+* Añadir reglas de negocio para controlar el stock por producto o categoría
+* Mejorar el manejo de errores al llamar a APIs externas
+* Añadir logs y métricas para poder detectar problemas
+* Guardar el estado de sincronización en una base de datos remota
+* Incorporar tests automatizados para asegurar estabilidad a largo plazo
 
 ## Licencia
 
 MIT
 
----
-
 ## Autor
 
 **David Losas González**
-📧 [david.losas.gonzalez@gmail.com](mailto:david.losas.gonzalez@gmail.com)
-🔗 [LinkedIn](https://www.linkedin.com/in/davidlosasgonzalez)
+- [davidlosas93@gmail.com](mailto:davidlosas93@gmail.com)

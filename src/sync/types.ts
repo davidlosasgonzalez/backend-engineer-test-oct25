@@ -1,9 +1,4 @@
-/**
- * Minimal ERP product shape required by the sync core.
- * This type is used by both the ERP client and the sync service,
- * so it's centralized here to avoid duplication.
- * Derived from the OpenAPI contract.
- */
+// ERP product shape used by both the ERP client and the sync service
 export interface ErpProduct {
     id: number;
     name: string;
@@ -36,3 +31,4 @@ export interface ErpProductsResponse {
 }
 
 export type SyncTarget = 'makro' | 'woo';
+export type SyncMode = 'full' | 'incremental';

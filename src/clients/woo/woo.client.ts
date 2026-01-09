@@ -6,9 +6,6 @@ import { WooBulkStockUpdate, WooStockUpdate } from './types';
 export class WooClient {
     private readonly baseUrl: string;
 
-    /**
-     * @param baseUrl - Optional base URL for the WooCommerce API. Defaults to mock server
-     */
     constructor(baseUrl?: string) {
         this.baseUrl =
             baseUrl ??
@@ -17,7 +14,6 @@ export class WooClient {
 
     /**
      * Updates stock for multiple products in a single bulk request
-     * @param updates - Array of stock updates (product_id and stock_quantity)
      */
     async updateStockBulk(updates: WooStockUpdate[]): Promise<void> {
         if (updates.length === 0) {
@@ -26,13 +22,16 @@ export class WooClient {
 
         const payload: WooBulkStockUpdate = { updates };
 
-        const res: Response = await fetch(`${this.baseUrl}/products/bulk-stock`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
+        const res: Response = await fetch(
+            `${this.baseUrl}/products/bulk-stock`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
             },
-            body: JSON.stringify(payload),
-        });
+        );
 
         if (!res.ok) {
             throw new Error(

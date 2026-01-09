@@ -3,61 +3,87 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Command } from 'commander';
 import { StockSyncService } from './sync/stock-sync.service';
-import { SyncTarget } from './sync/types';
+import { SyncMode, SyncTarget } from './sync/types';
 
 async function bootstrap() {
-    const appContext = await NestFactory.createApplicationContext(AppModule);
-    const stockSyncService = appContext.get(StockSyncService);
+    const app = await NestFactory.createApplicationContext(AppModule);
+    const syncService = app.get(StockSyncService);
 
     const program = new Command();
 
     program
         .name('stock-sync')
-        .description('CLI tool to sync stock from ERP to Makro and WooCommerce')
+        .description('Sync stock from ERP to Makro or WooCommerce')
         .version('1.0.0');
 
     program
         .command('sync')
-        .description('Sync stock to a target channel')
-        .requiredOption('--target <target>', 'Target channel (makro|woo)')
-        .action(async (options: { target: string }) => {
-            const target = options.target as SyncTarget;
+        .requiredOption('--target <target>', 'makro | woo')
+        .option('--mode <mode>', 'full | incremental', 'full')
+        .option('--workers <workers>', 'total workers', '1')
+        .option('--worker <worker>', 'worker id (0-indexed)', '0')
+        .action(async ({ target, mode, workers, worker }) => {
+            const validTargets: SyncTarget[] = ['makro', 'woo'];
+            const validModes: SyncMode[] = ['full', 'incremental'];
 
-            if (target !== 'makro' && target !== 'woo') {
-                console.error(`Invalid target: ${target}. Must be 'makro' or 'woo'`);
-                await appContext.close();
+            const totalWorkers = Number(workers);
+            const workerId = Number(worker);
+
+            const exitWithError = async (message: string) => {
+                console.error(message);
+                await app.close();
                 process.exit(1);
+            };
+
+            if (!validTargets.includes(target as SyncTarget)) {
+                return exitWithError(`Invalid target: ${target}`);
+            }
+
+            if (!validModes.includes(mode as SyncMode)) {
+                return exitWithError(`Invalid mode: ${mode}`);
+            }
+
+            if (totalWorkers < 1 || workerId < 0 || workerId >= totalWorkers) {
+                return exitWithError('Invalid worker configuration');
             }
 
             try {
-                console.log(`Starting sync to ${target}...`);
+                console.log(
+                    `Starting ${mode} sync to ${target}` +
+                        (totalWorkers > 1
+                            ? ` (worker ${workerId + 1}/${totalWorkers})`
+                            : ''),
+                );
+
                 if (target === 'makro') {
-                    await stockSyncService.syncToMakro();
+                    await syncService.syncToMakro(
+                        mode as SyncMode,
+                        100,
+                        totalWorkers,
+                        workerId,
+                    );
+                } else {
+                    await syncService.syncToWoo(
+                        mode as SyncMode,
+                        100,
+                        totalWorkers,
+                        workerId,
+                    );
                 }
-                if (target === 'woo') {
-                    await stockSyncService.syncToWoo();
-                }
-                console.log('Sync completed successfully');
-            } catch (err) {
+
+                console.log('Sync completed');
+            } catch (err: unknown) {
                 console.error('Sync failed:', err);
                 process.exit(1);
             } finally {
-                await appContext.close();
+                await app.close();
             }
         });
-
-    program.exitOverride((err) => {
-        if (err.code !== 'commander.helpDisplayed') {
-            appContext.close().finally(() => {
-                process.exit(err.exitCode || 1);
-            });
-        }
-    });
 
     await program.parseAsync();
 }
 
-bootstrap().catch((err) => {
-    console.error('Error:', err);
+bootstrap().catch((err: unknown) => {
+    console.error(err);
     process.exit(1);
 });

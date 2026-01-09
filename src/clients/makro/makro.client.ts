@@ -6,9 +6,6 @@ import { MakroBatchStockUpdate, MakroStockUpdate } from './types';
 export class MakroClient {
     private readonly baseUrl: string;
 
-    /**
-     * @param baseUrl - Optional base URL for the Makro API. Defaults to mock server
-     */
     constructor(baseUrl?: string) {
         this.baseUrl =
             baseUrl ??
@@ -17,7 +14,6 @@ export class MakroClient {
 
     /**
      * Updates stock for multiple products in a single batch request
-     * @param updates - Array of stock updates (product_id and quantity)
      */
     async updateStockBatch(updates: MakroStockUpdate[]): Promise<void> {
         if (updates.length === 0) {
@@ -26,13 +22,16 @@ export class MakroClient {
 
         const payload: MakroBatchStockUpdate = { updates };
 
-        const res: Response = await fetch(`${this.baseUrl}/products/batch-stock`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
+        const res: Response = await fetch(
+            `${this.baseUrl}/products/batch-stock`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
             },
-            body: JSON.stringify(payload),
-        });
+        );
 
         if (!res.ok) {
             throw new Error(
